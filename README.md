@@ -79,7 +79,7 @@ To generate API keys:
    node dist/index.js
    ```
 
-### Usage with Claude Desktop
+### Usage with Claude Desktop (stdio)
 
 Add the following to your `claude_desktop_config.json`:
 
@@ -99,6 +99,49 @@ Add the following to your `claude_desktop_config.json`:
   }
 }
 ```
+
+### Usage as HTTP Server
+
+The server supports Streamable HTTP transport for remote access and web-based clients like n8n.
+
+#### Starting the HTTP Server
+
+```bash
+# Set required environment variables
+export YANDEX_MAPS_API_KEY="your-geocoder-api-key"
+export YANDEX_MAPS_STATIC_API_KEY="your-static-api-key"
+export MCP_TRANSPORT="http"
+export MCP_PORT="3000"  # Optional, defaults to 3000
+export MCP_AUTH_TOKEN="your-secret-token"  # Optional but recommended
+
+# Run the server
+node dist/index.js
+```
+
+#### Configuration
+
+The HTTP server is **stateless** and uses the following environment variables:
+
+- `MCP_TRANSPORT`: Set to `"http"` to enable HTTP mode (default: `"stdio"`)
+- `MCP_PORT`: Port number for HTTP server (default: `3000`)
+- `MCP_AUTH_TOKEN`: Optional Bearer token for authentication. If not set, the server runs without authentication (not recommended for production)
+- `YANDEX_MAPS_API_KEY`: Your Yandex Geocoder API key (required)
+- `YANDEX_MAPS_STATIC_API_KEY`: Your Yandex Static Maps API key (required)
+
+#### Authentication
+
+When `MCP_AUTH_TOKEN` is set, clients must include it in the `Authorization` header:
+
+```
+Authorization: Bearer your-secret-token
+```
+
+#### Usage with n8n
+
+To use with n8n, configure the MCP Client node with:
+- **Server Transport**: `HTTP Streamable`
+- **URL**: `http://your-server:3000` (adjust host and port as needed)
+- **Authentication**: Add Bearer token if configured
 
 ## Known Limitations
 
