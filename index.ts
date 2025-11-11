@@ -2,12 +2,14 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import fetch from "node-fetch";
+import { createServer, IncomingMessage, ServerResponse } from "http";
 
 // Response interfaces
 interface YandexMapsResponse {
@@ -402,87 +404,222 @@ async function handleRenderMap(
 }
 
 // Server setup
-const server = new Server(
-  {
-    name: "mcp-server/yandex-maps",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      tools: {},
+function createMCPServer() {
+  const server = new Server(
+    {
+      name: "mcp-server/yandex-maps",
+      version: "0.1.0",
     },
-  },
-);
+    {
+      capabilities: {
+        tools: {},
+      },
+    },
+  );
 
-// Set up request handlers
-server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: MAPS_TOOLS,
-}));
+  // Set up request handlers
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: MAPS_TOOLS,
+  }));
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  try {
-    switch (request.params.name) {
-      case "maps_geocode": {
-        const { country, lang, state, city, district, street, house_number } = request.params.arguments as { 
-          country: string;
-          lang: string;
-          state?: string;
-          city?: string;
-          district?: string;
-          street?: string;
-          house_number?: string;
-        };
-        return await handleGeocode(country, lang, state, city, district, street, house_number);
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    try {
+      switch (request.params.name) {
+        case "maps_geocode": {
+          const { country, lang, state, city, district, street, house_number } = request.params.arguments as {
+            country: string;
+            lang: string;
+            state?: string;
+            city?: string;
+            district?: string;
+            street?: string;
+            house_number?: string;
+          };
+          return await handleGeocode(country, lang, state, city, district, street, house_number);
+        }
+
+        case "maps_reverse_geocode": {
+          const { latitude, longitude, lang } = request.params.arguments as {
+            latitude: number;
+            longitude: number;
+            lang: string;
+          };
+          return await handleReverseGeocode(latitude, longitude, lang);
+        }
+
+        case "maps_render": {
+          const { latitude, longitude, latitude_span, longitude_span, lang, placemarks } = request.params.arguments as {
+            latitude: number;
+            longitude: number;
+            latitude_span: number;
+            longitude_span: number;
+            lang: string;
+            placemarks?: Array<{ latitude: number, longitude: number }>;
+          };
+          return await handleRenderMap(latitude, longitude, latitude_span, longitude_span, lang, placemarks);
+        }
+
+        default:
+          return {
+            content: [{
+              type: "text",
+              text: `Unknown tool: ${request.params.name}`
+            }],
+            isError: true
+          };
       }
-
-      case "maps_reverse_geocode": {
-        const { latitude, longitude, lang } = request.params.arguments as {
-          latitude: number;
-          longitude: number;
-          lang: string;
-        };
-        return await handleReverseGeocode(latitude, longitude, lang);
-      }
-
-      case "maps_render": {
-        const { latitude, longitude, latitude_span, longitude_span, lang, placemarks } = request.params.arguments as {
-          latitude: number;
-          longitude: number;
-          latitude_span: number;
-          longitude_span: number;
-          lang: string;
-          placemarks?: Array<{ latitude: number, longitude: number }>;
-        };
-        return await handleRenderMap(latitude, longitude, latitude_span, longitude_span, lang, placemarks);
-      }
-
-      default:
-        return {
-          content: [{
-            type: "text",
-            text: `Unknown tool: ${request.params.name}`
-          }],
-          isError: true
-        };
+    } catch (error) {
+      return {
+        content: [{
+          type: "text",
+          text: `Error: ${error instanceof Error ? error.message : String(error)}`
+        }],
+        isError: true
+      };
     }
-  } catch (error) {
-    return {
-      content: [{
-        type: "text",
-        text: `Error: ${error instanceof Error ? error.message : String(error)}`
-      }],
-      isError: true
-    };
-  }
-});
+  });
 
-async function runServer() {
+  return server;
+}
+
+// Authentication helper for HTTP mode
+function authenticateRequest(req: IncomingMessage): boolean {
+  const authToken = process.env.MCP_AUTH_TOKEN;
+
+  // If no auth token is configured, allow all requests
+  if (!authToken) {
+    return true;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return false;
+  }
+
+  // Support Bearer token format
+  const token = authHeader.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : authHeader;
+
+  return token === authToken;
+}
+
+// HTTP request handler
+async function handleHTTPRequest(req: IncomingMessage, res: ServerResponse) {
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    res.writeHead(405, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Method not allowed. Use POST.'
+      },
+      id: null
+    }));
+    return;
+  }
+
+  // Authenticate request
+  if (!authenticateRequest(req)) {
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Unauthorized. Valid Bearer token required.'
+      },
+      id: null
+    }));
+    return;
+  }
+
+  // Read request body
+  let body = '';
+  req.on('data', chunk => {
+    body += chunk.toString();
+  });
+
+  req.on('end', async () => {
+    try {
+      const parsedBody = JSON.parse(body);
+
+      // Create fresh server and transport instances for stateless operation
+      const server = createMCPServer();
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined, // Stateless mode
+      });
+
+      await server.connect(transport);
+      await transport.handleRequest(req, res, parsedBody);
+
+      // Clean up on request close
+      res.on('close', () => {
+        transport.close();
+        server.close();
+      });
+    } catch (error) {
+      console.error('Error handling MCP request:', error);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          jsonrpc: '2.0',
+          error: {
+            code: -32603,
+            message: 'Internal server error'
+          },
+          id: null
+        }));
+      }
+    }
+  });
+}
+
+// Run HTTP server
+async function runHTTPServer() {
+  const port = parseInt(process.env.MCP_PORT || '3000', 10);
+  const server = createServer(handleHTTPRequest);
+
+  server.listen(port, () => {
+    console.error(`Yandex Maps MCP Server running on HTTP port ${port}`);
+    if (process.env.MCP_AUTH_TOKEN) {
+      console.error('Authentication enabled');
+    } else {
+      console.error('WARNING: No authentication token set. Set MCP_AUTH_TOKEN for production use.');
+    }
+  });
+
+  // Handle graceful shutdown
+  process.on('SIGINT', async () => {
+    console.error('Shutting down HTTP server...');
+    server.close();
+    process.exit(0);
+  });
+}
+
+// Run stdio server
+async function runStdioServer() {
+  const server = createMCPServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Yandex Maps MCP Server running on stdio");
 }
 
-runServer().catch((error) => {
+// Main entry point
+async function main() {
+  const transportMode = process.env.MCP_TRANSPORT || 'stdio';
+
+  if (transportMode === 'http') {
+    await runHTTPServer();
+  } else if (transportMode === 'stdio') {
+    await runStdioServer();
+  } else {
+    console.error(`Unknown transport mode: ${transportMode}. Use 'stdio' or 'http'.`);
+    process.exit(1);
+  }
+}
+
+main().catch((error) => {
   console.error("Fatal error running server:", error);
   process.exit(1);
 });
