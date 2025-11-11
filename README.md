@@ -139,10 +139,9 @@ Authorization: Bearer your-secret-token
 #### Usage with n8n
 
 To use with n8n, configure the MCP Client node with:
+- **Server Transport**: `HTTP Streamable`
 - **URL**: `http://your-server:3000` (adjust host and port as needed)
 - **Authentication**: Add Bearer token if configured
-
-> **Note**: The current implementation uses stateless Streamable HTTP transport. n8n's native MCP Client tool currently only supports deprecated SSE, so you may need to use the community plugin [n8n-nodes-mcp-client](https://www.npmjs.com/package/n8n-nodes-mcp-client) or wait for n8n to add Streamable HTTP support.
 
 ## Known Limitations
 
