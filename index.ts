@@ -80,6 +80,82 @@ interface GeocodeResponse extends YandexMapsResponse {
   };
 }
 
+interface SuggestHighlightRange {
+  begin: number;
+  end: number;
+}
+
+interface SuggestText {
+  text: string;
+  hl?: SuggestHighlightRange[];
+}
+
+interface SuggestResponse {
+  results?: Array<{
+    title: SuggestText;
+    subtitle?: SuggestText;
+    tags?: string[];
+    distance?: {
+      text: string;
+      value: number;
+    };
+    address?: {
+      formatted_address?: string;
+      component?: Array<{
+        name: string;
+        kind: string[];
+      }>;
+    };
+    uri?: string;
+  }>;
+  error?: string;
+  message?: string;
+}
+
+type SuggestObjectType =
+  | "biz"
+  | "geo"
+  | "street"
+  | "metro"
+  | "district"
+  | "locality"
+  | "area"
+  | "province"
+  | "country"
+  | "house"
+  | "entrance";
+
+interface SuggestBBox {
+  southwest: {
+    latitude: number;
+    longitude: number;
+  };
+  northeast: {
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface SuggestRequestArgs {
+  text: string;
+  lang?: string;
+  results?: number;
+  highlight?: boolean;
+  latitude?: number;
+  longitude?: number;
+  latitude_span?: number;
+  longitude_span?: number;
+  bbox?: SuggestBBox;
+  user_latitude?: number;
+  user_longitude?: number;
+  strict_bounds?: boolean;
+  countries?: string[];
+  types?: SuggestObjectType[];
+  print_address?: boolean;
+  org_address_kind?: "house";
+  include_uri?: boolean;
+}
+
 function getApiKey(): string {
     const apiKey = process.env.YANDEX_MAPS_API_KEY;
     if (!apiKey) {
@@ -98,8 +174,18 @@ function getStaticApiKey(): string {
   return apiKey;
 }
 
+function getSuggestApiKey(): string {
+  const apiKey = process.env.YANDEX_MAPS_SUGGEST_API_KEY;
+  if (!apiKey) {
+    console.error("YANDEX_MAPS_SUGGEST_API_KEY environment variable is not set");
+    process.exit(1);
+  }
+  return apiKey;
+}
+
 const YANDEX_MAPS_API_KEY = getApiKey();
 const YANDEX_MAPS_STATIC_API_KEY = getStaticApiKey();
+const YANDEX_MAPS_SUGGEST_API_KEY = getSuggestApiKey();
 
 // Tool definitions
 const GEOCODE_TOOL: Tool = {
@@ -213,14 +299,150 @@ const RENDER_MAP_TOOL: Tool = {
   }
 }
 
+const GEOSUGGEST_TOOL: Tool = {
+  name: "maps_geosuggest",
+  description: "Get Yandex Maps geosuggestions for geographic objects and organizations while the user types a search prefix",
+  inputSchema: {
+    type: "object",
+    properties: {
+      text: {
+        type: "string",
+        description: "User search input prefix. Must be a non-empty UTF-8 string"
+      },
+      lang: {
+        type: "string",
+        description: "Two-letter ISO 639-1 language code for results, e.g. 'ru', 'en'"
+      },
+      results: {
+        type: "integer",
+        minimum: 1,
+        maximum: 10,
+        description: "Maximum number of suggestions to return, from 1 to 10. Default is 7"
+      },
+      highlight: {
+        type: "boolean",
+        description: "Set false to disable highlight ranges in title/subtitle text. Omit or set true to use the API default"
+      },
+      latitude: {
+        type: "number",
+        description: "Latitude of the search window center"
+      },
+      longitude: {
+        type: "number",
+        description: "Longitude of the search window center"
+      },
+      latitude_span: {
+        type: "number",
+        description: "Search window height in degrees when latitude/longitude center is used"
+      },
+      longitude_span: {
+        type: "number",
+        description: "Search window width in degrees when latitude/longitude center is used"
+      },
+      bbox: {
+        type: "object",
+        description: "Search window bounds. Use either bbox or latitude/longitude center, not both",
+        properties: {
+          southwest: {
+            type: "object",
+            properties: {
+              latitude: { type: "number" },
+              longitude: { type: "number" }
+            },
+            required: ["latitude", "longitude"]
+          },
+          northeast: {
+            type: "object",
+            properties: {
+              latitude: { type: "number" },
+              longitude: { type: "number" }
+            },
+            required: ["latitude", "longitude"]
+          }
+        },
+        required: ["southwest", "northeast"]
+      },
+      user_latitude: {
+        type: "number",
+        description: "User GPS latitude used for distance calculation"
+      },
+      user_longitude: {
+        type: "number",
+        description: "User GPS longitude used for distance calculation"
+      },
+      strict_bounds: {
+        type: "boolean",
+        description: "Set true to return only objects inside the search window"
+      },
+      countries: {
+        type: "array",
+        description: "Two-letter ISO country codes used to restrict results, e.g. ['ru', 'uz', 'kz']",
+        items: {
+          type: "string"
+        }
+      },
+      types: {
+        type: "array",
+        description: "Object types to return. Multiple values work as OR, with broader types absorbing narrower ones",
+        items: {
+          type: "string",
+          enum: ["biz", "geo", "street", "metro", "district", "locality", "area", "province", "country", "house", "entrance"]
+        }
+      },
+      print_address: {
+        type: "boolean",
+        description: "Set true to include structured address components in the response"
+      },
+      org_address_kind: {
+        type: "string",
+        enum: ["house"],
+        description: "Use 'house' to return only organizations with an address down to house number"
+      },
+      include_uri: {
+        type: "boolean",
+        description: "Set true to include the uri field that can be used with the Yandex Geocoder API"
+      }
+    },
+    required: ["text"]
+  }
+};
+
 const MAPS_TOOLS = [
   GEOCODE_TOOL,
   REVERSE_GEOCODE_TOOL,
   RENDER_MAP_TOOL,
+  GEOSUGGEST_TOOL,
 ] as const;
 
 const YANDEX_MAPS_GEOCODER_BASE_URL = "https://geocode-maps.yandex.ru/1.x/";
 const YANDEX_MAPS_STATIC_BASE_URL = "https://static-maps.yandex.ru/v1";
+const YANDEX_MAPS_SUGGEST_BASE_URL = "https://suggest-maps.yandex.ru/v1/suggest";
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function validateCoordinate(value: number | undefined, name: string, min: number, max: number): string | null {
+  if (!isFiniteNumber(value)) {
+    return `${name} must be a finite number`;
+  }
+
+  if (value < min || value > max) {
+    return `${name} must be between ${min} and ${max}`;
+  }
+
+  return null;
+}
+
+function validationError(message: string) {
+  return {
+    content: [{
+      type: "text",
+      text: message
+    }],
+    isError: true
+  };
+}
 
 // API handlers
 async function handleGeocode(country: string, lang: string, state?: string, city?: string, district?: string, street?: string, house_number?: string) {
@@ -325,6 +547,220 @@ async function handleReverseGeocode(latitude: number, longitude: number, lang: s
         location: point ? { lng: point[0], lat: point[1] } : null,
         formatted_address: geoObject.metaDataProperty.GeocoderMetaData.text,
         address_components: geoObject.metaDataProperty.GeocoderMetaData.Address.Components
+      }, null, 2)
+    }],
+    isError: false
+  };
+}
+
+async function handleGeosuggest(args: SuggestRequestArgs) {
+  const {
+    text,
+    lang,
+    results,
+    highlight,
+    latitude,
+    longitude,
+    latitude_span,
+    longitude_span,
+    bbox,
+    user_latitude,
+    user_longitude,
+    strict_bounds,
+    countries,
+    types,
+    print_address,
+    org_address_kind,
+    include_uri
+  } = args;
+
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return validationError("Geosuggest failed: text must be a non-empty string");
+  }
+
+  if (results !== undefined && (!Number.isInteger(results) || results < 1 || results > 10)) {
+    return validationError("Geosuggest failed: results must be an integer from 1 to 10");
+  }
+
+  const hasCenter = latitude !== undefined || longitude !== undefined;
+  const hasSpan = latitude_span !== undefined || longitude_span !== undefined;
+  const hasBBox = bbox !== undefined;
+
+  if (hasCenter && hasBBox) {
+    return validationError("Geosuggest failed: use either bbox or latitude/longitude center, not both");
+  }
+
+  if ((latitude === undefined) !== (longitude === undefined)) {
+    return validationError("Geosuggest failed: latitude and longitude must be provided together");
+  }
+
+  if (hasSpan && (!hasCenter || latitude_span === undefined || longitude_span === undefined)) {
+    return validationError("Geosuggest failed: latitude_span and longitude_span require latitude and longitude center");
+  }
+
+  if (hasCenter) {
+    const latitudeError = validateCoordinate(latitude, "latitude", -90, 90);
+    if (latitudeError) {
+      return validationError(`Geosuggest failed: ${latitudeError}`);
+    }
+
+    const longitudeError = validateCoordinate(longitude, "longitude", -180, 180);
+    if (longitudeError) {
+      return validationError(`Geosuggest failed: ${longitudeError}`);
+    }
+  }
+
+  if (hasSpan) {
+    if (!isFiniteNumber(latitude_span) || latitude_span <= 0) {
+      return validationError("Geosuggest failed: latitude_span must be a positive finite number");
+    }
+
+    if (!isFiniteNumber(longitude_span) || longitude_span <= 0) {
+      return validationError("Geosuggest failed: longitude_span must be a positive finite number");
+    }
+  }
+
+  if (bbox) {
+    const { southwest, northeast } = bbox;
+
+    if (!southwest || !northeast) {
+      return validationError("Geosuggest failed: bbox must include southwest and northeast points");
+    }
+
+    const coordinateChecks = [
+      validateCoordinate(southwest.latitude, "bbox.southwest.latitude", -90, 90),
+      validateCoordinate(southwest.longitude, "bbox.southwest.longitude", -180, 180),
+      validateCoordinate(northeast.latitude, "bbox.northeast.latitude", -90, 90),
+      validateCoordinate(northeast.longitude, "bbox.northeast.longitude", -180, 180)
+    ].filter((error): error is string => error !== null);
+
+    if (coordinateChecks.length > 0) {
+      return validationError(`Geosuggest failed: ${coordinateChecks[0]}`);
+    }
+  }
+
+  if ((user_latitude === undefined) !== (user_longitude === undefined)) {
+    return validationError("Geosuggest failed: user_latitude and user_longitude must be provided together");
+  }
+
+  if (user_latitude !== undefined && user_longitude !== undefined) {
+    const userLatitudeError = validateCoordinate(user_latitude, "user_latitude", -90, 90);
+    if (userLatitudeError) {
+      return validationError(`Geosuggest failed: ${userLatitudeError}`);
+    }
+
+    const userLongitudeError = validateCoordinate(user_longitude, "user_longitude", -180, 180);
+    if (userLongitudeError) {
+      return validationError(`Geosuggest failed: ${userLongitudeError}`);
+    }
+  }
+
+  if (countries !== undefined && !Array.isArray(countries)) {
+    return validationError("Geosuggest failed: countries must be an array of two-letter country codes");
+  }
+
+  if (types !== undefined && !Array.isArray(types)) {
+    return validationError("Geosuggest failed: types must be an array of supported object types");
+  }
+
+  const url = new URL(YANDEX_MAPS_SUGGEST_BASE_URL);
+  url.searchParams.append("apikey", YANDEX_MAPS_SUGGEST_API_KEY);
+  url.searchParams.append("text", text);
+
+  if (lang) {
+    url.searchParams.append("lang", lang);
+  }
+
+  if (results !== undefined) {
+    url.searchParams.append("results", String(results));
+  }
+
+  if (highlight === false) {
+    url.searchParams.append("highlight", "0");
+  }
+
+  if (latitude !== undefined && longitude !== undefined) {
+    url.searchParams.append("ll", `${longitude},${latitude}`);
+  }
+
+  if (latitude_span !== undefined && longitude_span !== undefined) {
+    url.searchParams.append("spn", `${longitude_span},${latitude_span}`);
+  }
+
+  if (bbox) {
+    url.searchParams.append(
+      "bbox",
+      `${bbox.southwest.longitude},${bbox.southwest.latitude}~${bbox.northeast.longitude},${bbox.northeast.latitude}`
+    );
+  }
+
+  if (user_latitude !== undefined && user_longitude !== undefined) {
+    url.searchParams.append("ull", `${user_longitude},${user_latitude}`);
+  }
+
+  if (strict_bounds) {
+    url.searchParams.append("strict_bounds", "1");
+  }
+
+  const normalizedCountries = countries
+    ?.map(country => country.trim())
+    .filter(country => country.length > 0);
+
+  if (normalizedCountries && normalizedCountries.length > 0) {
+    url.searchParams.append("countries", normalizedCountries.join(","));
+  }
+
+  if (types && types.length > 0) {
+    url.searchParams.append("types", types.join(","));
+  }
+
+  if (print_address) {
+    url.searchParams.append("print_address", "1");
+  }
+
+  if (org_address_kind) {
+    url.searchParams.append("org_address_kind", org_address_kind);
+  }
+
+  if (include_uri) {
+    url.searchParams.append("attrs", "uri");
+  }
+
+  const response = await fetch(url.toString());
+  const responseText = await response.text();
+  let data: SuggestResponse | undefined;
+
+  if (responseText.length > 0) {
+    try {
+      data = JSON.parse(responseText) as SuggestResponse;
+    } catch (error) {
+      return {
+        content: [{
+          type: "text",
+          text: `Geosuggest failed: invalid JSON response (${error instanceof Error ? error.message : String(error)})`
+        }],
+        isError: true
+      };
+    }
+  }
+
+  if (!response.ok) {
+    const errorMessage = data?.message || data?.error || responseText || "Unknown error";
+
+    return {
+      content: [{
+        type: "text",
+        text: `Geosuggest failed: ${response.status} ${response.statusText}\n${errorMessage}`
+      }],
+      isError: true
+    };
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text: JSON.stringify({
+        results: data?.results ?? []
       }, null, 2)
     }],
     isError: false
@@ -457,6 +893,10 @@ function createMCPServer() {
             placemarks?: Array<{ latitude: number, longitude: number }>;
           };
           return await handleRenderMap(latitude, longitude, latitude_span, longitude_span, lang, placemarks);
+        }
+
+        case "maps_geosuggest": {
+          return await handleGeosuggest(request.params.arguments as unknown as SuggestRequestArgs);
         }
 
         default:

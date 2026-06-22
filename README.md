@@ -44,19 +44,42 @@ MCP Server for the Yandex Maps API.
        - Each placemark should have `latitude` and `longitude` properties
    - Returns: PNG image of the map
 
+4. `maps_geosuggest`
+   - Get Yandex Maps geosuggestions for geographic objects and organizations while the user types a search prefix
+   - Inputs:
+     - `text` (string) - User search input prefix
+     - `lang` (string, optional) - Two-letter ISO 639-1 language code (e.g., `ru`, `en`)
+     - `results` (integer, optional) - Maximum number of suggestions, from 1 to 10. Default is 7
+     - `highlight` (boolean, optional) - Set `false` to disable highlight ranges
+     - `latitude` (number, optional) - Latitude of the search window center
+     - `longitude` (number, optional) - Longitude of the search window center
+     - `latitude_span` (number, optional) - Search window height in degrees
+     - `longitude_span` (number, optional) - Search window width in degrees
+     - `bbox` (object, optional) - Search window bounds as `southwest` and `northeast` points
+     - `user_latitude` (number, optional) - User GPS latitude for distance calculation
+     - `user_longitude` (number, optional) - User GPS longitude for distance calculation
+     - `strict_bounds` (boolean, optional) - Set `true` to restrict results to the search window
+     - `countries` (array, optional) - Two-letter country codes (e.g., `["ru", "uz", "kz"]`)
+     - `types` (array, optional) - Object types: `biz`, `geo`, `street`, `metro`, `district`, `locality`, `area`, `province`, `country`, `house`, `entrance`
+     - `print_address` (boolean, optional) - Set `true` to include structured address components
+     - `org_address_kind` (string, optional) - Use `house` to return organizations with an address down to house number
+     - `include_uri` (boolean, optional) - Set `true` to include a `uri` usable with the Yandex Geocoder API
+   - Returns: Yandex Geosuggest `results` array
+
 ## Setup
 
 ### API Keys
-You'll need two Yandex Maps API keys:
+You'll need Yandex Maps API keys for the APIs you use:
 
 1. "JavaScript and Geocoder API" key for geocoding functions
 2. Static API key for map rendering
+3. "API Geosuggest" key for `maps_geosuggest`
 
 To generate API keys:
 1. Open https://developer.tech.yandex.ru/ and authorize
 2. Click "Connect APIs". Choose "JavaScript and Geocoder API" and fill the form
 3. Navigate to API's dashboard page and copy API key there
-4. Repeat from step 2 for Static API.
+4. Repeat from step 2 for Static API and API Geosuggest.
 
 ### Local Run
 
@@ -69,6 +92,7 @@ To generate API keys:
    ```bash
    export YANDEX_MAPS_API_KEY="your-geocoder-api-key"
    export YANDEX_MAPS_STATIC_API_KEY="your-static-api-key"
+   export YANDEX_MAPS_SUGGEST_API_KEY="your-geosuggest-api-key"
    ```
 4. Build server
    ```bash
@@ -93,7 +117,8 @@ Add the following to your `claude_desktop_config.json`:
       ],
       "env": {
         "YANDEX_MAPS_API_KEY": "<YOUR_GEOCODER_API_KEY>",
-        "YANDEX_MAPS_STATIC_API_KEY": "<YOUR_STATIC_API_KEY>"
+        "YANDEX_MAPS_STATIC_API_KEY": "<YOUR_STATIC_API_KEY>",
+        "YANDEX_MAPS_SUGGEST_API_KEY": "<YOUR_GEOSUGGEST_API_KEY>"
       }
     }
   }
@@ -110,6 +135,7 @@ The server supports Streamable HTTP transport for remote access and web-based cl
 # Set required environment variables
 export YANDEX_MAPS_API_KEY="your-geocoder-api-key"
 export YANDEX_MAPS_STATIC_API_KEY="your-static-api-key"
+export YANDEX_MAPS_SUGGEST_API_KEY="your-geosuggest-api-key"
 export MCP_TRANSPORT="http"
 export MCP_PORT="3000"  # Optional, defaults to 3000
 export MCP_AUTH_TOKEN="your-secret-token"  # Optional but recommended
@@ -127,6 +153,7 @@ The HTTP server is **stateless** and uses the following environment variables:
 - `MCP_AUTH_TOKEN`: Optional Bearer token for authentication. If not set, the server runs without authentication (not recommended for production)
 - `YANDEX_MAPS_API_KEY`: Your Yandex Geocoder API key (required)
 - `YANDEX_MAPS_STATIC_API_KEY`: Your Yandex Static Maps API key (required)
+- `YANDEX_MAPS_SUGGEST_API_KEY`: Your Yandex Geosuggest API key. Optional if `YANDEX_MAPS_API_KEY` can also access Geosuggest
 
 #### Authentication
 
