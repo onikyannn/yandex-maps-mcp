@@ -153,7 +153,7 @@ The HTTP server is **stateless** and uses the following environment variables:
 - `MCP_AUTH_TOKEN`: Optional Bearer token for authentication. If not set, the server runs without authentication (not recommended for production)
 - `YANDEX_MAPS_API_KEY`: Your Yandex Geocoder API key (required)
 - `YANDEX_MAPS_STATIC_API_KEY`: Your Yandex Static Maps API key (required)
-- `YANDEX_MAPS_SUGGEST_API_KEY`: Your Yandex Geosuggest API key. Optional if `YANDEX_MAPS_API_KEY` can also access Geosuggest
+- `YANDEX_MAPS_SUGGEST_API_KEY`: Your Yandex Geosuggest API key (required)
 
 #### Authentication
 
